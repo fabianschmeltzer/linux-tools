@@ -1,12 +1,10 @@
 # linux-toolbox
 
-Persönliche Baseline für kleine Linux-Hilfsscripts. Das Projekt stellt ein
-Installer-Script bereit, mit dem weitere Scripts nach `$HOME/.local/bin` oder in
-ein frei wählbares Zielverzeichnis installiert werden können.
+Personal baseline for small Linux helper scripts. This project provides an installer script that installs additional scripts into `$HOME/.local/bin` or a freely chosen target directory.
 
-## Nutzung
+## Usage
 
-Direkt von GitHub installieren:
+Install directly from GitHub:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fabianschmeltzer/linux-tools/refs/heads/main/install.sh | bash
@@ -18,27 +16,30 @@ linux-toolbox install self
 linux-toolbox install docker-start
 linux-toolbox install docker-stop
 linux-toolbox install maintenance-upgrade
+linux-toolbox install bcache-monitor
 linux-toolbox install all
+linux-toolbox ui
+linux-toolbox settings
 linux-toolbox version
 linux-toolbox check-update
 linux-toolbox self-update
 ```
 
-Das Installationsziel kann über `LINUX_TOOLBOX_INSTALL_DIR` angepasst werden:
+The install target can be customized with `LINUX_TOOLBOX_INSTALL_DIR`:
 
 ```bash
 LINUX_TOOLBOX_INSTALL_DIR=/usr/local/bin ./linux-toolbox.sh install all
 ```
 
-## Enthaltene Templates
+## Included templates
 
-- `docker-start`: startet ein Docker-Compose-Projekt im Hintergrund.
-- `docker-stop`: stoppt ein Docker-Compose-Projekt.
-- `maintenance-upgrade`: führt `apt update`, `apt upgrade -y` und
-  `apt autoremove -y` aus.
+- `docker-start`: starts a Docker Compose project in the background.
+- `docker-stop`: stops a Docker Compose project.
+- `maintenance-upgrade`: runs `apt update`, `apt upgrade -y`, and `apt autoremove -y`.
+- `bcache-monitor`: installs the Linux Bcache Monitor script.
 
-Eigene Scripts können ebenfalls installiert werden:
+You can also install custom scripts:
 
 ```bash
-linux-toolbox install-file ./mein-script.sh mein-script
+linux-toolbox install-file ./my-script.sh my-script
 ```
