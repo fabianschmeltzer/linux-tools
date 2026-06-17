@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+browse_folders() {
+    local current="${1:-/srv}"
+    local title="${2:-Ordner wahlen}"
+    
+    while true; do
+        mapfile -t dir_list < <(ls -1d "$current"/*/ 2>/dev/null | sort | head -20)
+        
+        local menu_entries=()
+        if [[ "$current" != "/" && "$current" != "/srv" ]]; then
+            menu_entries+=(".." " Zuruck")
+        fi
+        menu_entries+=("CURRENT" "Diesen Ordner wahlen")
+        
+        for fullpath in "${dir_list[@]}"; do
+            if [[ -n "$fullpath" ]]; then
+                name=$(basename "$fullpath")
+                menu_entries+=("$name" "Ordner $name/")
+            fi
+        done
+        
+        local choice
+        choice=$(whiptail --title "$title" \
+                         --menu "Pfad: $current | ${#dir_list[@]} Ordner" \
+                         25 80 18 \
+                         "${menu_entries[@]}" \
+                         3>&1 1>&2 2>&3)
+        
+        [[ $? -ne 0 ]] && return 1
+        
+        case "$choice" in
+            "..")
+                current="${current%/*}"
+                [[ "$current" == "" ]] && current="/srv"
+                ;;
+            "CURRENT")
+                echo "$current"
+                return 0
+                ;;
+            *)
+                for fullpath in "${dir_list[@]}"; do
+                    if [[ "$(basename "$fullpath")" == "$choice" ]]; then
+                        current="$fullpath"
+                        break
+                    fi
+                done
+                ;;
+        esac
+    done
+}
+
+clear
+echo "=============================================="
+echo "rsync Navigator fur /srv Drives (OMV/USB)"
+echo "=============================================="
+
+command -v whiptail >/dev/null 2>&1 || { echo "whiptail installieren: sudo apt install whiptail"; exit 1; }
+
+OP=$(whiptail --title "rsync Modus" --menu \
+"OMV/USB-kompatibel | Start: /srv" 18 70 6 \
+"1" "Kopieren (-a -u)" \
+"2" "Verschieben (ALLE loschen)" \
+"3" "Sync (--delete)" \
+"4" "Test (--dry-run)" \
+"5" "Update (-u)" \
+3>&1 1>&2 2>&3) || exit 1
+
+case "$OP" in
+    1) op="KOPIEREN"; flags="-a -u --info=progress2 --human-readable --perms" ;;
+    2) op="VERSCHIEBEN"; flags="-a --remove-source-files --info=progress2 --human-readable --delete-excluded --perms" ;;
+    3) op="SYNCHRONISIEREN"; flags="-a --delete -u --info=progress2 --human-readable --perms" ;;
+    4) op="TROCKENLAUF"; flags="-a --dry-run --info=progress2 --human-readable --perms" ;;
+    5) op="NUR NEUERE"; flags="-a -u --info=progress2 --human-readable --perms" ;;
+esac
+
+echo "Quelle wahlen..."
+SRC=$(browse_folders "/srv" "QUELLE wahlen") || { echo "Abgebrochen"; exit 1; }
+echo "Ziel wahlen..."
+DST=$(browse_folders "/srv" "ZIEL wahlen") || { echo "Abgebrochen"; exit 1; }
+
+# ULTRA-HARTER // FIX - ENDGUELTIG
+SRC_CLEAN=$(echo "$SRC" | sed 's|//*|/|g; s|/$||')
+DST_CLEAN=$(echo "$DST" | sed 's|//*|/|g; s|/$||')
+
+SRC_NAME=$(basename "$SRC_CLEAN")
+DST_NAME=$(basename "$DST_CLEAN")
+
+clear
+echo "==================================================================="
+echo "                    UBERSICHT - BESTATIGUNG"
+echo "==================================================================="
+echo "Operation: $op"
+echo ""
+echo "Von:  $SRC_NAME/"
+echo "Nach: $DST_NAME/"
+echo ""
+echo "Vollstandige Pfade:"
+echo "-------------------------------------------------------------------"
+echo "$SRC_CLEAN/"
+echo "$DST_CLEAN/"
+echo "-------------------------------------------------------------------"
+
+if [[ "$op" == "VERSCHIEBEN" ]]; then
+    echo "VERSCHIEBEN: Ubertragen + ALLE Quelldateien/Ordner LOSCHEN!"
+fi
+echo "==================================================================="
+
+SUMMARY_TEXT="${op}
+Von: $SRC_NAME/
+Nach: $DST_NAME/
+
+$SRC_CLEAN/ -> $DST_CLEAN/"
+
+if ! whiptail --title "FINAL BESTATIGUNG" --yesno "$SUMMARY_TEXT" 14 75; then
+    clear; echo "Abgebrochen."
+    exit 0
+fi
+
+# RSYNC MIT PERFEKT SAUBEREN PFADEN
+clear
+echo "==================================================================="
+echo "RSYNC $op STARTET!"
+echo "==================================================================="
+echo "Von:  $SRC_CLEAN/"
+echo "Nach: $DST_CLEAN/"
+echo "==================================================================="
+
+# WICHTIG: Trailing / fuer Verzeichnisse
+rsync $flags --no-inc-recursive --stats "$SRC_CLEAN/" "$DST_CLEAN/"
+
+echo ""
+echo "==================================================================="
+echo "ERFOLG! Enter zum Beenden..."
+echo "==================================================================="
+read -r
