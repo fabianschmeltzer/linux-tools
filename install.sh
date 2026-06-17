@@ -8,7 +8,7 @@ INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_NAME="linux-toolbox.sh"
 TARGET_NAME="linux-toolbox"
 RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/$GITHUB_REF/$SCRIPT_NAME"
-
+TMP_FILE=""
 
 log() { printf '[%s installer] %s\n' "$APP_NAME" "$*"; }
 die() { printf '[%s installer] ERROR: %s\n' "$APP_NAME" "$*" >&2; exit 1; }
@@ -30,16 +30,16 @@ ensure_install_dir() {
 }
 
 install_toolbox() {
-  local tmp_file target
+  local target
 
   ensure_install_dir
-  tmp_file="$(mktemp)"
+  TMP_FILE="$(mktemp)"
   target="$INSTALL_DIR/$TARGET_NAME"
-  trap 'rm -f "${tmp_file:-}"' EXIT
+  trap 'rm -f "${TMP_FILE:-}"' EXIT
 
-  download_url "$RAW_URL" > "$tmp_file"
-  chmod 0755 "$tmp_file"
-  install -m 0755 "$tmp_file" "$target"
+  download_url "$RAW_URL" > "$TMP_FILE"
+  chmod 0755 "$TMP_FILE"
+  install -m 0755 "$TMP_FILE" "$target"
 
   log "Installiert: $target"
   log "Quelle: $RAW_URL"
