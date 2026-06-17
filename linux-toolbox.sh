@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 APP_NAME="linux-toolbox"
-VERSION="0.1.9.1"
+VERSION="0.2.0"
 INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GITHUB_REPO="fabianschmeltzer/linux-tools"
@@ -583,8 +583,8 @@ show_header() {
   clear
   printf '\n'
   printf '  ╔══════════════════════════════════════════╗\n'
-  printf '  ║   linux-toolbox v%s\n' "$VERSION"
-  printf '  ║   %s\n' "$1"
+  printf '  ║ %-40s ║\n' "linux-toolbox v$VERSION"
+  printf '  ║ %-40s ║\n' "$1"
   printf '  ╚══════════════════════════════════════════╝\n'
   printf '\n'
 }
@@ -756,13 +756,7 @@ EOF
 }
 
 usage() {
-  printf '
-  ╔════════════════════════════════════════════════════════════════╗
-  ║  linux-toolbox v%-46s║
-  ║  Baseline and installer for personal Linux helper scripts      ║
-  ╚════════════════════════════════════════════════════════════════╝
-
-' "$VERSION"
+  show_header "Help"
 
   cat <<'EOF'
   USAGE:
