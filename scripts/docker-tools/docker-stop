@@ -1,25 +1,275 @@
-#!/bin/bash
-# safe-shutdown-v5.sh – Nur graceful, KEIN force-kill
-# Für Raspberry Pi 4 + OMV + Docker + nginx
+﻿#!/usr/bin/env bash
+set -Eeuo pipefail
+readonly SAFE_PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+export PATH="$SAFE_PATH"
 
-echo "=== Safe Shutdown v5 – Nur graceful Stop ==="
+APP_NAME="docker-stop"
+VERSION="0.1.0"
+SCRIPT_ID="docker-stop"
+SCRIPT_PATH="scripts/docker-tools/docker-stop"
+GITHUB_REPO="fabianschmeltzer/linux-tools"
+TAGS_API_URL="https://api.github.com/repos/$GITHUB_REPO/tags"
+RAW_BASE_URL="https://raw.githubusercontent.com/$GITHUB_REPO"
+TAG_PREFIX="$SCRIPT_ID/v"
 
-# 1. Alle laufenden Container graceful stoppen (Timeout 30 Sekunden wie gewünscht)
-echo "→ Graceful Stop aller Container (Timeout 30 Sekunden)..."
+log() { printf '[%s] %s\n' "$APP_NAME" "$*"; }
+warn() { printf '[%s] WARN: %s\n' "$APP_NAME" "$*" >&2; }
+die() { printf '[%s] ERROR: %s\n' "$APP_NAME" "$*" >&2; exit 1; }
+
+download_url() {
+  local url="$1"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$url"
+  else
+    die "Neither curl nor wget found. Please install one of them."
+  fi
+}
+
+download_url_safe() {
+  local url="$1"
+  set +e
+  download_url "$url"
+  local rc=$?
+  set -e
+  return $rc
+}
+
+normalize_version() {
+  local version="${1#v}"
+  version="${version#V}"
+  printf '%s\n' "$version"
+}
+
+is_semver() {
+  [[ "$1" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]
+}
+
+version_gt() {
+  local left right
+  left="$(normalize_version "$1")"
+  right="$(normalize_version "$2")"
+
+  is_semver "$left" || die "Invalid version: $1"
+  is_semver "$right" || die "Invalid version: $2"
+
+  local left_major=0 left_minor=0 left_patch=0
+  local right_major=0 right_minor=0 right_patch=0
+  IFS=. read -r left_major left_minor left_patch <<<"$left"
+  IFS=. read -r right_major right_minor right_patch <<<"$right"
+  left_minor="${left_minor:-0}"
+  left_patch="${left_patch:-0}"
+  right_minor="${right_minor:-0}"
+  right_patch="${right_patch:-0}"
+
+  (( left_major > right_major )) && return 0
+  (( left_major < right_major )) && return 1
+  (( left_minor > right_minor )) && return 0
+  (( left_minor < right_minor )) && return 1
+  (( left_patch > right_patch ))
+}
+
+extract_tag_names() {
+  local json="$1"
+  sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$json"
+}
+
+extract_script_version() {
+  local script_body="$1"
+  sed -n 's/^VERSION="\([^"]*\)".*/\1/p' <<<"$script_body" | head -n 1
+}
+
+latest_matching_tag() {
+  local tags_json="$1"
+  local tag version best_tag="" best_version=""
+
+  while IFS= read -r tag; do
+    case "$tag" in
+      "$TAG_PREFIX"*)
+        version="$(normalize_version "${tag#"$TAG_PREFIX"}")"
+        if is_semver "$version"; then
+          if [[ -z "$best_version" ]] || version_gt "$version" "$best_version"; then
+            best_version="$version"
+            best_tag="$tag"
+          fi
+        fi
+        ;;
+    esac
+  done < <(extract_tag_names "$tags_json")
+
+  [[ -n "$best_tag" ]] || die "No matching release tag found for $TAG_PREFIX<semver>."
+  printf '%s\n%s\n' "$best_tag" "$best_version"
+}
+
+load_remote_update() {
+  local tags_json tag_data remote_tag remote_version remote_url remote_body body_version
+
+  tags_json="$(download_url_safe "$TAGS_API_URL")"
+  [[ -n "$tags_json" ]] || die "Could not load GitHub tags from $TAGS_API_URL."
+
+  tag_data="$(latest_matching_tag "$tags_json")"
+  remote_tag="$(sed -n '1p' <<<"$tag_data")"
+  remote_version="$(sed -n '2p' <<<"$tag_data")"
+  remote_url="$RAW_BASE_URL/$remote_tag/$SCRIPT_PATH"
+  remote_body="$(download_url_safe "$remote_url")"
+  [[ -n "$remote_body" ]] || die "Could not load $SCRIPT_PATH from $remote_url."
+
+  body_version="$(extract_script_version "$remote_body")"
+  [[ -n "$body_version" ]] || die "Could not read VERSION from $remote_url."
+  [[ "$(normalize_version "$body_version")" == "$remote_version" ]] || die "Tag version $remote_version does not match script VERSION $body_version."
+
+  printf '%s\n%s\n%s\n' "$remote_version" "$remote_url" "$remote_body"
+}
+
+validate_update_body() {
+  local remote_url="$1"
+  local remote_body="$2"
+
+  [[ -n "$remote_body" ]] || die "Download failed: empty content from $remote_url"
+  [[ "$remote_body" == *"VERSION=\""* ]] || die "Downloaded script has no VERSION marker: $remote_url"
+}
+
+install_update_body() {
+  local target="$1"
+  local remote_body="$2"
+  local target_dir tmp_file backup_file
+
+  [[ -n "$target" ]] || die "Could not determine self-update target."
+  [[ -f "$target" ]] || die "Self-update target not found: $target"
+  [[ -w "$target" ]] || die "Self-update target is not writable: $target"
+
+  target_dir="$(cd -- "$(dirname -- "$target")" && pwd)"
+  tmp_file="$(mktemp "$target_dir/.$SCRIPT_ID.update.XXXXXX")" || die "Failed to create temporary update file."
+  backup_file="$target.backup"
+  trap 'rm -f "${tmp_file:-}" "${backup_file:-}"' EXIT
+
+  printf '%s\n' "$remote_body" > "$tmp_file" || die "Failed to write update to temporary file."
+  bash -n "$tmp_file" || die "Bash syntax error in downloaded update."
+  chmod 0755 "$tmp_file" || die "Failed to set executable bit on update."
+  cp "$target" "$backup_file" || die "Failed to create backup: $backup_file"
+
+  if ! mv "$tmp_file" "$target"; then
+    cp "$backup_file" "$target" 2>/dev/null || true
+    die "Failed to update: $target"
+  fi
+
+  rm -f "$backup_file"
+  trap - EXIT
+}
+
+check_update() {
+  local remote_data remote_version remote_url
+
+  remote_data="$(load_remote_update)"
+  remote_version="$(sed -n '1p' <<<"$remote_data")"
+  remote_url="$(sed -n '2p' <<<"$remote_data")"
+
+  if version_gt "$remote_version" "$VERSION"; then
+    log "Update available: $VERSION -> $remote_version"
+    log "Source: $remote_url"
+    return 0
+  fi
+
+  log "Current: $VERSION"
+  log "Checked source: $remote_url"
+  return 1
+}
+
+self_update() {
+  local remote_data remote_version remote_url remote_body target
+
+  remote_data="$(load_remote_update)"
+  remote_version="$(sed -n '1p' <<<"$remote_data")"
+  remote_url="$(sed -n '2p' <<<"$remote_data")"
+  remote_body="$(sed '1,2d' <<<"$remote_data")"
+
+  validate_update_body "$remote_url" "$remote_body"
+
+  if ! version_gt "$remote_version" "$VERSION"; then
+    log "No update needed. Local version: $VERSION, remote version: $remote_version"
+    return 0
+  fi
+
+  target="${LINUX_TOOLBOX_SELF_UPDATE_TARGET:-${BASH_SOURCE[0]}}"
+  install_update_body "$target" "$remote_body"
+
+  log "Updated: $target"
+  log "Version: $VERSION -> $remote_version"
+  log "Source: $remote_url"
+}
+
+auto_update_check() {
+  [[ "${LINUX_TOOLBOX_SKIP_UPDATE:-}" == "1" ]] && return 0
+
+  (
+    set +e
+    local remote_data remote_version remote_body target
+
+    remote_data="$(load_remote_update 2>/dev/null)" || return 0
+    remote_version="$(sed -n '1p' <<<"$remote_data")"
+    version_gt "$remote_version" "$VERSION" || return 0
+
+    remote_body="$(sed '1,2d' <<<"$remote_data")"
+    target="${LINUX_TOOLBOX_SELF_UPDATE_TARGET:-}"
+    if [[ -z "$target" ]]; then
+      target="$(command -v "$SCRIPT_ID" 2>/dev/null)" || return 0
+    fi
+    [[ -n "$target" ]] || return 0
+
+    install_update_body "$target" "$remote_body" >/dev/null 2>&1 || return 0
+  ) >/dev/null 2>&1 &
+
+  return 0
+}
+
+show_version() {
+  printf '%s %s\n' "$SCRIPT_ID" "$VERSION"
+}
+
+main() {
+  case "${1:-}" in
+    version|--version|-v)
+      show_version
+      ;;
+    check-update)
+      check_update
+      ;;
+    self-update)
+      self_update
+      ;;
+    *)
+      auto_update_check
+      run_main "$@"
+      ;;
+  esac
+}
+run_main() {
+# safe-shutdown-v5.sh â€“ Nur graceful, KEIN force-kill
+# FÃ¼r Raspberry Pi 4 + OMV + Docker + nginx
+
+echo "=== Safe Shutdown v5 â€“ Nur graceful Stop ==="
+
+# 1. Alle laufenden Container graceful stoppen (Timeout 30 Sekunden wie gewÃ¼nscht)
+echo "â†’ Graceful Stop aller Container (Timeout 30 Sekunden)..."
 sudo docker stop --timeout=30 $(docker ps -q) 2>/dev/null || true
 
-# Kurze Wartezeit, damit die meisten Apps sauber abschließen können
+# Kurze Wartezeit, damit die meisten Apps sauber abschlieÃŸen kÃ¶nnen
 sleep 12
 
-# 2. Prüfen, ob noch Container laufen (hängende Zombies)
+# 2. PrÃ¼fen, ob noch Container laufen (hÃ¤ngende Zombies)
 still_running=$(docker ps -q)
 if [ -n "$still_running" ]; then
-  echo "→ Noch laufende/hängende Container nach 30s → Docker-Daemon wird gestoppt"
+  echo "â†’ Noch laufende/hÃ¤ngende Container nach 30s â†’ Docker-Daemon wird gestoppt"
   sudo systemctl stop docker
   sleep 8
 else
-  echo "→ Alle Container erfolgreich gestoppt"
+  echo "â†’ Alle Container erfolgreich gestoppt"
 fi
 
-# 3. Services für nächsten Boot sicherstellen (harmlos, läuft immer)
+# 3. Services fÃ¼r nÃ¤chsten Boot sicherstellen (harmlos, lÃ¤uft immer)
 sudo systemctl enable docker nginx --quiet 2>/dev/null
+}
+
+main "$@"

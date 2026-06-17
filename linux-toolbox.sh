@@ -4,13 +4,15 @@ readonly SAFE_PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH="$SAFE_PATH"
 
 APP_NAME="linux-toolbox"
-VERSION="0.2.1"
+VERSION="0.2.2"
 INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GITHUB_REPO="fabianschmeltzer/linux-tools"
-RELEASE_API_URL="https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+TAGS_API_URL="https://api.github.com/repos/$GITHUB_REPO/tags"
 RAW_BASE_URL="https://raw.githubusercontent.com/$GITHUB_REPO"
-SCRIPT_NAME="linux-toolbox.sh"
+SCRIPT_ID="linux-toolbox"
+SCRIPT_PATH="linux-toolbox.sh"
+TAG_PREFIX="$SCRIPT_ID/v"
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CONFIG_DIR="$XDG_CONFIG_HOME/linux-toolbox"
 CONFIG_FILE="$CONFIG_DIR/config"
@@ -406,9 +408,9 @@ version_gt() {
   (( left_patch > right_patch ))
 }
 
-extract_release_tag() {
+extract_tag_names() {
   local json="$1"
-  sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$json" | head -n 1
+  sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$json"
 }
 
 extract_script_version() {
@@ -417,35 +419,37 @@ extract_script_version() {
 }
 
 load_remote_update() {
-  local release_json release_tag release_version release_url release_body
-  local main_url main_body main_version
+  local tags_json tag version best_tag="" best_version=""
+  local remote_url remote_body body_version
 
-  release_json="$(download_url_safe "$RELEASE_API_URL")"
-  release_tag="$(extract_release_tag "$release_json")"
+  tags_json="$(download_url_safe "$TAGS_API_URL")"
+  [[ -n "$tags_json" ]] || die "Konnte GitHub-Tags von $TAGS_API_URL nicht laden."
 
-  if [[ -n "$release_tag" ]]; then
-    release_version="$(normalize_version "$release_tag")"
-    if is_semver "$release_version"; then
-      release_url="$RAW_BASE_URL/$release_tag/$SCRIPT_NAME"
-      release_body="$(download_url_safe "$release_url")"
-      if [[ -n "$release_body" ]]; then
-        printf '%s\n%s\n%s\n' "$release_version" "$release_url" "$release_body"
-        return 0
-      fi
-      warn "Release $release_tag gefunden, aber $SCRIPT_NAME konnte daraus nicht geladen werden. Nutze Fallback main."
-    else
-      warn "Release-Tag $release_tag ist keine numerische SemVer-Version. Nutze Fallback main."
-    fi
-  fi
+  while IFS= read -r tag; do
+    case "$tag" in
+      "$TAG_PREFIX"*)
+        version="$(normalize_version "${tag#"$TAG_PREFIX"}")"
+        if is_semver "$version"; then
+          if [[ -z "$best_version" ]] || version_gt "$version" "$best_version"; then
+            best_version="$version"
+            best_tag="$tag"
+          fi
+        fi
+        ;;
+    esac
+  done < <(extract_tag_names "$tags_json")
 
-  main_url="$RAW_BASE_URL/main/$SCRIPT_NAME"
-  main_body="$(download_url_safe "$main_url")"
-  [[ -n "$main_body" ]] || die "Konnte $SCRIPT_NAME von $main_url nicht laden."
-  main_version="$(extract_script_version "$main_body")"
-  [[ -n "$main_version" ]] || die "Konnte VERSION aus $main_url nicht lesen."
-  is_semver "$(normalize_version "$main_version")" || die "Remote-Version ist ungültig: $main_version"
+  [[ -n "$best_tag" ]] || die "Kein passender Release-Tag gefunden: $TAG_PREFIX<semver>"
 
-  printf '%s\n%s\n%s\n' "$(normalize_version "$main_version")" "$main_url" "$main_body"
+  remote_url="$RAW_BASE_URL/$best_tag/$SCRIPT_PATH"
+  remote_body="$(download_url_safe "$remote_url")"
+  [[ -n "$remote_body" ]] || die "Konnte $SCRIPT_PATH von $remote_url nicht laden."
+
+  body_version="$(extract_script_version "$remote_body")"
+  [[ -n "$body_version" ]] || die "Konnte VERSION aus $remote_url nicht lesen."
+  [[ "$(normalize_version "$body_version")" == "$best_version" ]] || die "Tag-Version $best_version passt nicht zur Script-Version $body_version."
+
+  printf '%s\n%s\n%s\n' "$best_version" "$remote_url" "$remote_body"
 }
 
 check_update() {
