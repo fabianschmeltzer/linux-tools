@@ -4,10 +4,11 @@ Persönliche Baseline für kleine Linux-Hilfsscripts. Das Projekt stellt ein Ins
 
 ## Nutzung
 
+Das Script kann aktuell nur als Root verwendet werden.
 Direkt von GitHub installieren:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fabianschmeltzer/linux-tools/refs/heads/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fabianschmeltzer/linux-tools/refs/heads/main/install.sh | sudo bash
 ```
 
 ```bash
