@@ -7,7 +7,7 @@ Personal baseline for small Linux helper scripts. This project provides an insta
 Install directly from GitHub:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fabianschmeltzer/linux-tools/refs/heads/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fabianschmeltzer/linux-tools/main/install.sh | bash
 ```
 
 ```bash
