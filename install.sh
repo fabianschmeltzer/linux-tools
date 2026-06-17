@@ -9,6 +9,7 @@ SCRIPT_NAME="linux-toolbox.sh"
 TARGET_NAME="linux-toolbox"
 RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/$GITHUB_REF/$SCRIPT_NAME"
 
+
 log() { printf '[%s installer] %s\n' "$APP_NAME" "$*"; }
 die() { printf '[%s installer] ERROR: %s\n' "$APP_NAME" "$*" >&2; exit 1; }
 
