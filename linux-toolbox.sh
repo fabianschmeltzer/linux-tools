@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+readonly SAFE_PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+export PATH="$SAFE_PATH"
 
 APP_NAME="linux-toolbox"
-VERSION="0.2.0"
+VERSION="0.2.1"
 INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GITHUB_REPO="fabianschmeltzer/linux-tools"
