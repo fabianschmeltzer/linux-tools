@@ -4,7 +4,7 @@ readonly SAFE_PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH="$SAFE_PATH"
 
 APP_NAME="linux-toolbox"
-VERSION="0.2.0"
+VERSION="0.2.1"
 INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GITHUB_REPO="fabianschmeltzer/linux-tools"
@@ -17,6 +17,8 @@ CONFIG_FILE="$CONFIG_DIR/config"
 LANGUAGE="${LINUX_TOOLBOX_LANGUAGE:-${LANGUAGE:-${LANG:-}}}"
 LANGUAGE="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]' | cut -c1-2)"
 LANGUAGE="${LANGUAGE:-en}"
+
+
 
 log() { printf '[%s] %s\n' "$APP_NAME" "$*"; }
 warn() { printf '[%s] WARN: %s\n' "$APP_NAME" "$*" >&2; }
@@ -32,6 +34,13 @@ download_url() {
     die "$MSG_NEED_CURL_WGET"
   fi
 }
+
+# ----------------------------------------------------------
+# Root-Check
+# ----------------------------------------------------------
+if [[ $EUID -ne 0 ]]; then
+  die "Dieses Installationsscript muss als root ausgeführt werden (sudo oder root Shell)."
+fi
 
 # ===== VALIDATION FUNCTIONS =====
 validate_file_exists() {
