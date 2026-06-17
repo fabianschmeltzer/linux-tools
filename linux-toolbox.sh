@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 APP_NAME="linux-toolbox"
-VERSION="0.1.3"
+VERSION="0.1.4"
 INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GITHUB_REPO="fabianschmeltzer/linux-tools"
@@ -20,6 +20,119 @@ log() { printf '[%s] %s\n' "$APP_NAME" "$*"; }
 warn() { printf '[%s] WARN: %s\n' "$APP_NAME" "$*" >&2; }
 die() { printf '[%s] ERROR: %s\n' "$APP_NAME" "$*" >&2; exit 1; }
 
+# ===== VALIDATION FUNCTIONS =====
+validate_file_exists() {
+  local file="$1"
+  [[ -f "$file" ]] || die "File not found: $file"
+}
+
+validate_file_readable() {
+  local file="$1"
+  [[ -r "$file" ]] || die "File not readable: $file"
+}
+
+validate_file_writable() {
+  local file="$1"
+  local dir="$(dirname "$file")"
+  if [[ -f "$file" ]]; then
+    [[ -w "$file" ]] || die "File not writable: $file"
+  else
+    [[ -w "$dir" ]] || die "Directory not writable: $dir"
+  fi
+}
+
+validate_executable() {
+  local file="$1"
+  [[ -x "$file" ]] || die "File not executable: $file"
+}
+
+validate_bash_syntax() {
+  local file="$1"
+  bash -n "$file" 2>/dev/null || die "Bash syntax error in: $file"
+}
+
+validate_checksum_sha256() {
+  local file="$1"
+  local expected="$2"
+  if command -v sha256sum >/dev/null 2>&1; then
+    local actual
+    actual="$(sha256sum "$file" | awk '{print $1}')"
+    if [[ "$actual" != "$expected" ]]; then
+      die "Checksum mismatch for $file (expected: $expected, got: $actual)"
+    fi
+    return 0
+  fi
+  return 1
+}
+
+validate_dir_exists() {
+  local dir="$1"
+  [[ -d "$dir" ]] || die "Directory not found: $dir"
+}
+
+validate_installation() {
+  local target="$1"
+  local name="${2:-}"
+  
+  # Check if file exists
+  [[ -f "$target" ]] || die "Installation failed: file not created ($target)"
+  
+  # Check if executable
+  [[ -x "$target" ]] || die "Installation failed: file not executable ($target)"
+  
+  # Check if readable
+  [[ -r "$target" ]] || die "Installation failed: file not readable ($target)"
+  
+  # Optional: Check if contains expected content
+  if [[ -n "$name" ]]; then
+    case "$name" in
+      self|linux-toolbox)
+        grep -q "VERSION=" "$target" || die "Installation failed: version marker not found ($target)"
+        ;;
+      docker-start)
+        grep -q "docker compose" "$target" || die "Installation failed: docker command not found ($target)"
+        ;;
+      docker-stop)
+        grep -q "docker compose" "$target" || die "Installation failed: docker command not found ($target)"
+        ;;
+      maintenance-upgrade)
+        grep -q "apt" "$target" || die "Installation failed: apt command not found ($target)"
+        ;;
+    esac
+  fi
+  
+  log "✓ Installation verified: $target"
+}
+
+validate_config() {
+  local config="$1"
+  
+  [[ -f "$config" ]] || die "Config not found: $config"
+  [[ -r "$config" ]] || die "Config not readable: $config"
+  
+  # Check config format
+  if ! grep -q "^[a-z_]*=" "$config"; then
+    die "Config format invalid: $config"
+  fi
+  
+  log "✓ Config verified: $config"
+}
+
+validate_download() {
+  local url="$1"
+  local content="$2"
+  
+  # Check if content is not empty
+  [[ -n "$content" ]] || die "Download failed: empty content from $url"
+  
+  # Check if content looks valid (basic check)
+  [[ "$content" == *"#!/"* ]] || [[ "$content" == *"#!"* ]] || \
+  [[ "$content" == *"{"* ]] || [[ "$content" == *"["* ]] || \
+  return 0  # Allow if doesn't match patterns (could be other formats)
+  
+  log "✓ Download verified: $url"
+}
+
 ensure_install_dir() {
   mkdir -p "$INSTALL_DIR"
 }
@@ -30,45 +143,108 @@ ensure_config_dir() {
 
 load_config() {
   if [[ -f "$CONFIG_FILE" ]]; then
+    # Validate config file before reading
+    validate_file_readable "$CONFIG_FILE" || return 1
+    validate_config "$CONFIG_FILE" || return 1
+    
     while IFS='=' read -r key value; do
-      case "$key" in
-        install_dir) INSTALL_DIR="$value" ;;
-        language) LANGUAGE="$value" ;;
-      esac
+      # Validate key format (alphanumeric + underscore)
+      if [[ "$key" =~ ^[a-z_]+$ ]]; then
+        case "$key" in
+          install_dir) 
+            # Validate directory is writable
+            if [[ -d "$value" ]] && [[ -w "$value" ]]; then
+              INSTALL_DIR="$value"
+            fi
+            ;;
+          language)
+            # Validate language code (2 chars, lowercase)
+            if [[ "$value" =~ ^[a-z]{2}$ ]]; then
+              LANGUAGE="$value"
+            fi
+            ;;
+        esac
+      fi
     done < "$CONFIG_FILE"
   fi
 }
 
 save_config() {
   ensure_config_dir
+  validate_dir_exists "$CONFIG_DIR"
+  validate_file_writable "$CONFIG_FILE"
+  
+  # Write config
   cat > "$CONFIG_FILE" <<EOF
 install_dir=$INSTALL_DIR
 language=$LANGUAGE
 EOF
+  
+  # Validate written config
+  if validate_config "$CONFIG_FILE"; then
+    log "✓ Config saved: $CONFIG_FILE"
+  else
+    die "Config validation failed after save"
+  fi
 }
 
 install_script() {
   local source_file="$1"
   local target_name="${2:-$(basename "$source_file")}"
+  local target_path="$INSTALL_DIR/$target_name"
 
-  [[ -f "$source_file" ]] || die "${MSG_INSTALL_ERR//%s/$source_file}"
+  # Validation Phase 1: Source file
+  validate_file_exists "$source_file"
+  validate_file_readable "$source_file"
+  
+  # Validation Phase 2: Target directory
   ensure_install_dir
-  install -m 0755 "$source_file" "$INSTALL_DIR/$target_name"
-  log "${MSG_INSTALLED//%s/$INSTALL_DIR/$target_name}"
+  validate_dir_exists "$INSTALL_DIR"
+  validate_file_writable "$target_path"
+  
+  # Validation Phase 3: Install
+  install -m 0755 "$source_file" "$target_path" || die "Installation command failed: $target_path"
+  
+  # Validation Phase 4: Verify installation
+  validate_installation "$target_path" "$target_name"
+  
+  log "✓ ${MSG_INSTALLED//%s/$target_path}"
 }
 
 install_script_url() {
   local url="$1"
   local target_name="$2"
-  local tmp_file
+  local tmp_file target_path
 
   ensure_install_dir
-  tmp_file="$(mktemp)"
+  validate_dir_exists "$INSTALL_DIR"
+  
+  tmp_file="$(mktemp)" || die "Failed to create temporary file"
   trap 'rm -f "${tmp_file:-}"' EXIT
-  download_url "$url" > "$tmp_file"
-  chmod 0755 "$tmp_file"
-  install -m 0755 "$tmp_file" "$INSTALL_DIR/$target_name"
-  log "${MSG_INSTALLED//%s/$INSTALL_DIR/$target_name}"
+  
+  # Download with validation
+  local content
+  content="$(download_url "$url")" || die "Download failed: $url"
+  validate_download "$url" "$content"
+  
+  # Write to temp file
+  printf '%s\n' "$content" > "$tmp_file" || die "Failed to write to temporary file"
+  
+  # Validate bash syntax
+  validate_bash_syntax "$tmp_file"
+  
+  # Set executable
+  chmod 0755 "$tmp_file" || die "Failed to set executable bit on temporary file"
+  
+  # Install
+  target_path="$INSTALL_DIR/$target_name"
+  validate_file_writable "$target_path"
+  install -m 0755 "$tmp_file" "$target_path" || die "Installation command failed: $target_path"
+  
+  # Verify installation
+  validate_installation "$target_path" "$target_name"
+  
+  log "✓ ${MSG_INSTALLED//%s/$target_path}"
 }
 
 download_url_safe() {
@@ -269,12 +445,18 @@ check_update() {
 }
 
 self_update() {
-  local remote_data remote_version remote_url remote_body target tmp_file target_dir
+  local remote_data remote_version remote_url remote_body target tmp_file target_dir backup_file
 
-  remote_data="$(load_remote_update)"
+  # Load remote update with validation
+  remote_data="$(load_remote_update)" || die "Failed to load remote update"
   remote_version="$(sed -n '1p' <<<"$remote_data")"
   remote_url="$(sed -n '2p' <<<"$remote_data")"
   remote_body="$(sed '1,2d' <<<"$remote_data")"
+
+  # Validate remote data
+  [[ -n "$remote_version" ]] || die "Remote version not found"
+  [[ -n "$remote_url" ]] || die "Remote URL not found"
+  validate_download "$remote_url" "$remote_body"
 
   if ! version_gt "$remote_version" "$VERSION"; then
     log "Keine Aktualisierung nötig. Lokale Version: $VERSION, Remote-Version: $remote_version"
@@ -283,16 +465,48 @@ self_update() {
 
   target="${LINUX_TOOLBOX_SELF_UPDATE_TARGET:-${BASH_SOURCE[0]}}"
   [[ -n "$target" ]] || die "Konnte Ziel für Self-Update nicht bestimmen."
+  
+  # Validate target
+  validate_file_exists "$target"
+  validate_file_readable "$target"
+  validate_file_writable "$target"
+  
   target_dir="$(cd -- "$(dirname -- "$target")" && pwd)"
-  tmp_file="$(mktemp "$target_dir/.${APP_NAME}.update.XXXXXX")"
+  validate_dir_exists "$target_dir"
+  
+  # Create backup
+  backup_file="${target}.backup"
+  cp "$target" "$backup_file" || die "Failed to create backup: $backup_file"
+  trap "rm -f '$backup_file'" EXIT
 
-  printf '%s\n' "$remote_body" > "$tmp_file"
-  chmod 0755 "$tmp_file"
-  mv "$tmp_file" "$target"
+  # Create temp file
+  tmp_file="$(mktemp "$target_dir/.${APP_NAME}.update.XXXXXX")" || die "Failed to create temp file"
+  trap 'rm -f "$tmp_file" "$backup_file"' EXIT
 
-  log "Aktualisiert: $target"
-  log "Version: $VERSION -> $remote_version"
-  log "Quelle: $remote_url"
+  # Write update
+  printf '%s\n' "$remote_body" > "$tmp_file" || die "Failed to write update to temp file"
+
+  # Validate new version
+  validate_bash_syntax "$tmp_file"
+  
+  # Set executable
+  chmod 0755 "$tmp_file" || die "Failed to set executable bit"
+
+  # Move to target
+  mv "$tmp_file" "$target" || {
+    cp "$backup_file" "$target"
+    die "Failed to update: $target"
+  }
+
+  # Verify update
+  validate_installation "$target" "linux-toolbox"
+
+  # Cleanup backup on success
+  rm -f "$backup_file"
+
+  log "✓ Aktualisiert: $target"
+  log "✓ Version: $VERSION -> $remote_version"
+  log "✓ Quelle: $remote_url"
 }
 
 install_from_template() {
@@ -300,43 +514,52 @@ install_from_template() {
   local target="$INSTALL_DIR/$name"
 
   ensure_install_dir
+  validate_dir_exists "$INSTALL_DIR"
+  
   if [[ -e "$target" ]]; then
     warn "Überspringe vorhandenes Script: $target"
     return 0
   fi
 
+  local template_content
   case "$name" in
     docker-start)
-      cat > "$target" <<'SCRIPT'
-#!/usr/bin/env bash
+      template_content='#!/usr/bin/env bash
 set -Eeuo pipefail
 compose_file="${1:-docker-compose.yml}"
-docker compose -f "$compose_file" up -d
-SCRIPT
+docker compose -f "$compose_file" up -d'
       ;;
     docker-stop)
-      cat > "$target" <<'SCRIPT'
-#!/usr/bin/env bash
+      template_content='#!/usr/bin/env bash
 set -Eeuo pipefail
 compose_file="${1:-docker-compose.yml}"
-docker compose -f "$compose_file" down
-SCRIPT
+docker compose -f "$compose_file" down'
       ;;
     maintenance-upgrade)
-      cat > "$target" <<'SCRIPT'
-#!/usr/bin/env bash
+      template_content='#!/usr/bin/env bash
 set -Eeuo pipefail
 sudo apt update
 sudo apt upgrade -y
-sudo apt autoremove -y
-SCRIPT
+sudo apt autoremove -y'
       ;;
     *)
       die "Unbekanntes Template: $name"
       ;;
   esac
-  chmod 0755 "$target"
-  log "${MSG_TEMPLATE_INSTALLED//%s/$target}"
+  
+  # Write template with validation
+  printf '%s\n' "$template_content" > "$target" || die "Failed to write template: $target"
+  
+  # Validate bash syntax
+  validate_bash_syntax "$target"
+  
+  # Set executable
+  chmod 0755 "$target" || die "Failed to set executable bit: $target"
+  
+  # Verify installation
+  validate_installation "$target" "$name"
+  
+  log "✓ ${MSG_TEMPLATE_INSTALLED//%s/$target}"
 }
 
 install_bcache_monitor() {
@@ -525,7 +748,7 @@ usage() {
   cat <<'EOF'
 
   ╔════════════════════════════════════════════════════════════════╗
-  ║  linux-toolbox v0.1.3                                          ║
+  ║  linux-toolbox v0.1.4                                          ║
   ║  Baseline and installer for personal Linux helper scripts      ║
   ╚════════════════════════════════════════════════════════════════╝
 
@@ -583,9 +806,100 @@ install_option() {
   esac
 }
 
+auto_update_check() {
+  local skip_update="${LINUX_TOOLBOX_SKIP_UPDATE:-}"
+  
+  # Skip if explicitly disabled
+  if [[ "$skip_update" == "1" ]]; then
+    return 0
+  fi
+  
+  # Skip if running from source directory (development mode)
+  if [[ "${BASH_SOURCE[0]}" == "$SCRIPT_DIR"* ]]; then
+    return 0
+  fi
+  
+  # Check update silently in background without blocking
+  (
+    set +e
+    
+    # Load config for language
+    load_config 2>/dev/null || true
+    set_messages 2>/dev/null || true
+    
+    local remote_data
+    remote_data="$(load_remote_update 2>/dev/null)" || return 0
+    
+    local remote_version
+    remote_version="$(sed -n '1p' <<<"$remote_data")"
+    
+    # Check if update is available
+    if ! version_gt "$remote_version" "$VERSION"; then
+      return 0
+    fi
+    
+    # Update is available - proceed with auto-update
+    local remote_url remote_body target tmp_file
+    remote_url="$(sed -n '2p' <<<"$remote_data")"
+    remote_body="$(sed '1,2d' <<<"$remote_data")"
+    
+    # Find the installed location
+    local script_location
+    script_location="$(command -v linux-toolbox 2>/dev/null)" || return 0
+    
+    # Validate update content
+    if ! validate_download "$remote_url" "$remote_body"; then
+      return 0
+    fi
+    
+    # Create temporary file
+    tmp_file="$(mktemp)" || return 0
+    trap 'rm -f "$tmp_file"' EXIT
+    
+    # Write and validate
+    printf '%s\n' "$remote_body" > "$tmp_file"
+    
+    if ! validate_bash_syntax "$tmp_file"; then
+      return 0
+    fi
+    
+    # Backup original
+    local backup_file="${script_location}.backup"
+    if ! cp "$script_location" "$backup_file" 2>/dev/null; then
+      return 0
+    fi
+    
+    # Install update
+    if ! install -m 0755 "$tmp_file" "$script_location" 2>/dev/null; then
+      # Restore backup if installation failed
+      cp "$backup_file" "$script_location" 2>/dev/null || true
+      return 0
+    fi
+    
+    # Validate installation
+    if ! validate_installation "$script_location" "linux-toolbox"; then
+      # Restore backup if validation failed
+      cp "$backup_file" "$script_location" 2>/dev/null || true
+      return 0
+    fi
+    
+    # Cleanup backup
+    rm -f "$backup_file"
+    
+    log "✓ Auto-updated to version $remote_version (was: $VERSION)"
+    
+  ) &>/dev/null &
+  
+  # Don't wait for background process
+  return 0
+}
+
 main() {
   load_config
   set_messages
+  
+  # Auto-check and update in background (non-blocking)
+  auto_update_check
 
   local command="${1:-help}"
   shift || true
