@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 APP_NAME="linux-toolbox"
-VERSION="0.1.5"
+VERSION="0.1.6"
 INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GITHUB_REPO="fabianschmeltzer/linux-tools"
