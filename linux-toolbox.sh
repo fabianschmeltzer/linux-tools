@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 APP_NAME="linux-toolbox"
-VERSION="0.1.0"
+VERSION="0.1.1"
 INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GITHUB_REPO="fabianschmeltzer/linux-tools"
@@ -222,18 +222,18 @@ usage() {
 $APP_NAME - Baseline und Installer für persönliche Linux-Hilfsscripts
 
 Verwendung:
-  ./linux-toolbox.sh list
-  ./linux-toolbox.sh install <option>
-  ./linux-toolbox.sh install-file <pfad> [zielname]
-  ./linux-toolbox.sh version
-  ./linux-toolbox.sh check-update
-  ./linux-toolbox.sh self-update
-  ./linux-toolbox.sh help
+  linux-toolbox list
+  linux-toolbox install <option>
+  linux-toolbox install-file <pfad> [zielname]
+  linux-toolbox version
+  linux-toolbox check-update
+  linux-toolbox self-update
+  linux-toolbox help
 
 Beispiele:
-  ./linux-toolbox.sh install self
-  ./linux-toolbox.sh install docker-start
-  LINUX_TOOLBOX_INSTALL_DIR=/usr/local/bin ./linux-toolbox.sh install all
+  linux-toolbox install self
+  linux-toolbox install docker-start
+  LINUX_TOOLBOX_INSTALL_DIR=/usr/local/bin linux-toolbox install all
 EOF_USAGE
 }
 
@@ -265,6 +265,10 @@ main() {
   shift || true
 
   case "$command" in
+    version)
+      printf '%s %s\n' "$APP_NAME" "$VERSION"
+      return 0
+      ;;
     list)
       list_available
       ;;
@@ -273,9 +277,6 @@ main() {
       ;;
     install-file)
       install_script "${1:-}" "${2:-}"
-      ;;
-    version)
-      printf '%s %s\n' "$APP_NAME" "$VERSION"
       ;;
     check-update)
       check_update
