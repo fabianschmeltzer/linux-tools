@@ -44,6 +44,25 @@ install_toolbox() {
   log "Installiert: $target"
   log "Quelle: $RAW_URL"
 
+  # Install bash completion
+  local completion_dir
+  if [[ -d /etc/bash_completion.d ]]; then
+    completion_dir=/etc/bash_completion.d
+  elif [[ -d /usr/local/etc/bash_completion.d ]]; then
+    completion_dir=/usr/local/etc/bash_completion.d
+  else
+    completion_dir="$HOME/.bash_completion.d"
+    mkdir -p "$completion_dir"
+  fi
+
+  local completion_url="https://raw.githubusercontent.com/$GITHUB_REPO/$GITHUB_REF/linux-toolbox.completion.bash"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$completion_url" | install -m 0644 /dev/stdin "$completion_dir/linux-toolbox" 2>/dev/null || true
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$completion_url" | install -m 0644 /dev/stdin "$completion_dir/linux-toolbox" 2>/dev/null || true
+  fi
+  log "Bash-Completion installiert: $completion_dir/linux-toolbox"
+
   case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
     *)

@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 APP_NAME="linux-toolbox"
-VERSION="0.1.2"
+VERSION="0.1.3"
 INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GITHUB_REPO="fabianschmeltzer/linux-tools"
@@ -345,154 +345,215 @@ install_bcache_monitor() {
   install_script_url "$url" "$target_name"
 }
 
+show_header() {
+  clear
+  printf '\n'
+  printf '  ╔══════════════════════════════════════════╗\n'
+  printf '  ║   linux-toolbox v%s\n' "$VERSION"
+  printf '  ║   %s\n' "$1"
+  printf '  ╚══════════════════════════════════════════╝\n'
+  printf '\n'
+}
+
+show_menu_item() {
+  local num=$1 label=$2 desc=$3
+  printf '  %2d) %-20s  %s\n' "$num" "$label" "$desc"
+}
+
+show_separator() {
+  printf '  ──────────────────────────────────────────\n'
+}
+
 show_monitor_menu() {
-  local options=("bcache-monitor" "$MSG_BACK")
-  PS3="$MSG_SELECT_SCRIPT "
-  select opt in "${options[@]}"; do
-    case "$opt" in
-      bcache-monitor)
-        install_bcache_monitor
-        break
-        ;;
-      "$MSG_BACK")
-        break
-        ;;
-      *)
-        echo "$MSG_NO_SCRIPT"
-        ;;
-    esac
-  done
+  show_header "📊 Monitoring Scripts"
+  printf '  These scripts help monitor your system:\n\n'
+  show_menu_item "1" "bcache-monitor" "Monitor Linux bcache devices (SSD cache + HDD)"
+  show_menu_item "0" "← Back" "Return to main menu"
+  show_separator
+  read -rp '  Choose option (0-1): ' choice
+  case "$choice" in
+    1)
+      printf '\n  ⏳ Installing bcache-monitor...\n'
+      install_bcache_monitor
+      printf '\n  ✓ Installation complete!\n'
+      read -rp '  Press Enter to continue...'
+      ;;
+    0) ;;
+    *) printf '  ✗ Invalid choice.\n'; read -rp '  Press Enter...'; show_monitor_menu ;;
+  esac
 }
 
 show_docker_menu() {
-  local options=("docker-start" "docker-stop" "$MSG_BACK")
-  PS3="$MSG_SELECT_SCRIPT "
-  select opt in "${options[@]}"; do
-    case "$opt" in
-      docker-start|docker-stop)
-        install_from_template "$opt"
-        break
-        ;;
-      "$MSG_BACK")
-        break
-        ;;
-      *)
-        echo "$MSG_NO_SCRIPT"
-        ;;
-    esac
-  done
+  show_header "🐳 Docker Scripts"
+  printf '  Docker Compose management scripts:\n\n'
+  show_menu_item "1" "docker-start" "Start Docker Compose project"
+  show_menu_item "2" "docker-stop" "Stop Docker Compose project"
+  show_menu_item "0" "← Back" "Return to main menu"
+  show_separator
+  read -rp '  Choose option (0-2): ' choice
+  case "$choice" in
+    1)
+      printf '\n  ⏳ Installing docker-start...\n'
+      install_from_template "docker-start"
+      printf '\n  ✓ Installation complete!\n'
+      read -rp '  Press Enter to continue...'
+      ;;
+    2)
+      printf '\n  ⏳ Installing docker-stop...\n'
+      install_from_template "docker-stop"
+      printf '\n  ✓ Installation complete!\n'
+      read -rp '  Press Enter to continue...'
+      ;;
+    0) ;;
+    *) printf '  ✗ Invalid choice.\n'; read -rp '  Press Enter...'; show_docker_menu ;;
+  esac
 }
 
 show_maintenance_menu() {
-  local options=("maintenance-upgrade" "$MSG_BACK")
-  PS3="$MSG_SELECT_SCRIPT "
-  select opt in "${options[@]}"; do
-    case "$opt" in
-      maintenance-upgrade)
-        install_from_template "$opt"
-        break
-        ;;
-      "$MSG_BACK")
-        break
-        ;;
-      *)
-        echo "$MSG_NO_SCRIPT"
-        ;;
-    esac
-  done
+  show_header "🔧 System Maintenance"
+  printf '  System administration and maintenance:\n\n'
+  show_menu_item "1" "maintenance-upgrade" "Update system packages"
+  show_menu_item "0" "← Back" "Return to main menu"
+  show_separator
+  read -rp '  Choose option (0-1): ' choice
+  case "$choice" in
+    1)
+      printf '\n  ⏳ Installing maintenance-upgrade...\n'
+      install_from_template "maintenance-upgrade"
+      printf '\n  ✓ Installation complete!\n'
+      read -rp '  Press Enter to continue...'
+      ;;
+    0) ;;
+    *) printf '  ✗ Invalid choice.\n'; read -rp '  Press Enter...'; show_maintenance_menu ;;
+  esac
 }
 
 settings_menu() {
-  local choice
   while true; do
-    echo
-    printf "$MSG_MENU_HEADER\n" "$MSG_SETTINGS"
-    echo "1) $MSG_LANGUAGE: $LANGUAGE"
-    echo "2) $MSG_INSTALL_DIR: $INSTALL_DIR"
-    echo "3) $MSG_SAVE_EXIT"
-    echo "4) $MSG_BACK"
-    read -rp "$MSG_SELECT_OPTION " choice
+    show_header "⚙️  Settings"
+    printf '  Configure linux-toolbox:\n\n'
+    show_menu_item "1" "Language" "Current: $LANGUAGE"
+    show_menu_item "2" "Install Dir" "Current: $INSTALL_DIR"
+    show_menu_item "3" "Save & Exit" "Save changes and return"
+    show_menu_item "0" "← Back" "Discard changes"
+    show_separator
+    read -rp '  Choose option (0-3): ' choice
     case "$choice" in
       1)
-        read -rp "$MSG_ENTER_LANGUAGE " LANGUAGE
-        LANGUAGE="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]' | cut -c1-2)"
-        set_messages
+        printf '\n  Enter language code (de/en): '
+        read -r new_lang
+        if [[ "$new_lang" == "de" || "$new_lang" == "en" ]]; then
+          LANGUAGE="$new_lang"
+          set_messages
+          printf '  ✓ Language changed to %s\n' "$new_lang"
+        else
+          printf '  ✗ Invalid language.\n'
+        fi
+        read -rp '  Press Enter...'
         ;;
       2)
-        read -rp "$MSG_ENTER_INSTALL_DIR " INSTALL_DIR
+        printf '\n  Enter install directory: '
+        read -r new_dir
+        if [[ -d "$new_dir" || -z "$new_dir" ]]; then
+          [[ -n "$new_dir" ]] && INSTALL_DIR="$new_dir"
+          printf '  ✓ Install directory updated.\n'
+        else
+          printf '  ✗ Directory does not exist.\n'
+        fi
+        read -rp '  Press Enter...'
         ;;
       3)
         save_config
-        echo "$MSG_CONFIG_SAVED"
+        printf '\n  ✓ Settings saved.\n'
+        read -rp '  Press Enter...'
+        return 0
         ;;
-      4)
-        break
+      0)
+        return 0
         ;;
-      *)
-        echo "$MSG_NO_SCRIPT"
-        ;;
+      *) printf '  ✗ Invalid choice.\n'; read -rp '  Press Enter...';;
     esac
   done
 }
 
 ui_menu() {
-  local categories
-  categories=("$MSG_MONITORING" "$MSG_DOCKER" "$MSG_MAINTENANCE" "$MSG_SETTINGS" "$MSG_BACK")
-  PS3="$MSG_SELECT_CATEGORY "
-  select category in "${categories[@]}"; do
-    case "$category" in
-      Monitoring)
-        show_monitor_menu
+  while true; do
+    show_header "Main Menu"
+    printf '  Select a category to explore:\n\n'
+    show_menu_item "1" "📊 Monitoring" "System monitoring tools"
+    show_menu_item "2" "🐳 Docker" "Docker Compose utilities"
+    show_menu_item "3" "🔧 Maintenance" "System administration"
+    show_menu_item "4" "⚙️  Settings" "Configure linux-toolbox"
+    show_menu_item "0" "✕ Exit" "Close linux-toolbox"
+    show_separator
+    read -rp '  Choose option (0-4): ' choice
+    case "$choice" in
+      1) show_monitor_menu ;;
+      2) show_docker_menu ;;
+      3) show_maintenance_menu ;;
+      4) settings_menu ;;
+      0)
+        printf '\n  👋 Goodbye!\n\n'
+        return 0
         ;;
-      Docker)
-        show_docker_menu
-        ;;
-      Maintenance)
-        show_maintenance_menu
-        ;;
-      "$MSG_SETTINGS")
-        settings_menu
-        ;;
-      "$MSG_BACK")
-        break
-        ;;
-      *)
-        echo "$MSG_NO_SCRIPT"
-        ;;
+      *) printf '  ✗ Invalid choice.\n'; read -rp '  Press Enter...';;
     esac
   done
 }
 
 list_available() {
-  cat <<EOF_LIST
-$MSG_LIST_TITLE
-$MSG_OPTION_SELF
-$MSG_OPTION_DOCKER_START
-$MSG_OPTION_DOCKER_STOP
-$MSG_OPTION_MAINTENANCE
-$MSG_OPTION_BCACHE
-$MSG_OPTION_ALL
+  cat <<EOF
 
-$MSG_INSTALL_DIR: $INSTALL_DIR
-EOF_LIST
+  ╔════════════════════════════════════════════════════════════════╗
+  ║           Available Installation Options                       ║
+  ╚════════════════════════════════════════════════════════════════╝
+
+  self                    Install linux-toolbox as system command
+  docker-start            Docker Compose project starter script
+  docker-stop             Docker Compose project stopper script
+  maintenance-upgrade     System package update and maintenance
+  bcache-monitor          Linux bcache device monitoring tool
+  all                     Install all scripts above
+
+  ────────────────────────────────────────────────────────────────
+  Install destination:    $INSTALL_DIR
+
+EOF
 }
 
 usage() {
-  cat <<EOF_USAGE
-$APP_NAME ${VERSION}
+  cat <<'EOF'
 
-${MSG_USAGE_TITLE}
+  ╔════════════════════════════════════════════════════════════════╗
+  ║  linux-toolbox v0.1.3                                          ║
+  ║  Baseline and installer for personal Linux helper scripts      ║
+  ╚════════════════════════════════════════════════════════════════╝
 
-${MSG_USAGE_USAGE}
-${MSG_USAGE_COMMANDS}
+  USAGE:
+    linux-toolbox COMMAND [OPTIONS]
 
-${MSG_USAGE_examples}
-  linux-toolbox install self
-  linux-toolbox install docker-start
-  linux-toolbox ui
-  linux-toolbox settings
-  LINUX_TOOLBOX_INSTALL_DIR=/usr/local/bin linux-toolbox install all
-EOF_USAGE
+  COMMANDS:
+    list                Show available scripts to install
+    install <option>    Install a script or template
+    install-file <path> Install custom script from file
+    ui                  Open interactive menu
+    settings            Configure linux-toolbox
+    version             Show version information
+    check-update        Check for updates
+    self-update         Update linux-toolbox
+    help                Show this help message
+
+  EXAMPLES:
+    linux-toolbox list
+    linux-toolbox install docker-start
+    linux-toolbox install-file ./my-script.sh my-script
+    linux-toolbox ui
+    linux-toolbox settings
+    LINUX_TOOLBOX_INSTALL_DIR=/usr/local/bin linux-toolbox install all
+
+  For more information, visit: https://github.com/fabianschmeltzer/linux-tools
+
+EOF
 }
 
 install_option() {
