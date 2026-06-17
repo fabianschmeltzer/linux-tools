@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 APP_NAME="linux-toolbox"
-VERSION="0.1.8"
+VERSION="0.1.9"
 INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GITHUB_REPO="fabianschmeltzer/linux-tools"
@@ -759,7 +759,7 @@ usage() {
   cat <<'EOF'
 
   ╔════════════════════════════════════════════════════════════════╗
-  ║  linux-toolbox v%s\n' "$VERSION"                                          ║
+  ║  linux-toolbox v$VERSION                                          ║
   ║  Baseline and installer for personal Linux helper scripts      ║
   ╚════════════════════════════════════════════════════════════════╝
 
