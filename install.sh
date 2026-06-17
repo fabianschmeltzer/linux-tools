@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-readonly SAFE_PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-export PATH="$SAFE_PATH"
 
 APP_NAME="linux-toolbox"
 GITHUB_REPO="${LINUX_TOOLBOX_REPO:-fabianschmeltzer/linux-tools}"
