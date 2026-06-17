@@ -71,5 +71,5 @@ install_toolbox() {
       ;;
   esac
 }
-
+log "Starte die Anwndung mit: linux-toolbox"
 install_toolbox
