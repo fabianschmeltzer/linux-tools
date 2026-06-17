@@ -70,6 +70,6 @@ install_toolbox() {
       log "Beispiel: export PATH=\"$INSTALL_DIR:$PATH\""
       ;;
   esac
+  log "Starte die Anwndung mit: linux-toolbox"
 }
-log "Starte die Anwndung mit: linux-toolbox"
 install_toolbox
