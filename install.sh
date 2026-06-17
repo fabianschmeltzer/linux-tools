@@ -35,7 +35,7 @@ install_toolbox() {
   ensure_install_dir
   tmp_file="$(mktemp)"
   target="$INSTALL_DIR/$TARGET_NAME"
-  trap 'rm -f "$tmp_file"' EXIT
+  trap 'rm -f "${tmp_file:-}"' EXIT
 
   download_url "$RAW_URL" > "$tmp_file"
   chmod 0755 "$tmp_file"
@@ -48,7 +48,7 @@ install_toolbox() {
     *":$INSTALL_DIR:"*) ;;
     *)
       log "Hinweis: $INSTALL_DIR ist nicht in PATH. Fuege es hinzu, um '$TARGET_NAME' direkt aufzurufen."
-      log "Beispiel: export PATH=\"$INSTALL_DIR:\\$PATH\""
+      log "Beispiel: export PATH=\"$INSTALL_DIR:$PATH\""
       ;;
   esac
 }
