@@ -46,7 +46,10 @@ install_toolbox() {
 
   case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
-    *) log "Hinweis: $INSTALL_DIR ist nicht in PATH. Fuege es hinzu, um '$TARGET_NAME' direkt aufzurufen." ;;
+    *)
+      log "Hinweis: $INSTALL_DIR ist nicht in PATH. Fuege es hinzu, um '$TARGET_NAME' direkt aufzurufen."
+      log "Beispiel: export PATH=\"$INSTALL_DIR:\\$PATH\""
+      ;;
   esac
 }
 
