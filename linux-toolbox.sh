@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 APP_NAME="linux-toolbox"
-VERSION="0.1.4"
+VERSION="0.1.5"
 INSTALL_DIR="${LINUX_TOOLBOX_INSTALL_DIR:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GITHUB_REPO="fabianschmeltzer/linux-tools"
@@ -19,6 +19,17 @@ LANGUAGE="${LANGUAGE:-en}"
 log() { printf '[%s] %s\n' "$APP_NAME" "$*"; }
 warn() { printf '[%s] WARN: %s\n' "$APP_NAME" "$*" >&2; }
 die() { printf '[%s] ERROR: %s\n' "$APP_NAME" "$*" >&2; exit 1; }
+download_url() {
+  local url="$1"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$url"
+  else
+    die "$MSG_NEED_CURL_WGET"
+  fi
+}
 
 # ===== VALIDATION FUNCTIONS =====
 validate_file_exists() {
