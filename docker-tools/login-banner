@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# Farben
+GREEN='\033[1;32m'
+CYAN='\033[1;36m'
+RED='\033[1;31m'
+NC='\033[0m'
+
+HOST=$(hostname)
+UPTIME=$(uptime -p | sed 's/up //')
+KERNEL=$(uname -r)
+
+MEM_USED=$(free -m | awk '/Mem:/ {print $3}')
+MEM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
+
+ROOT_USAGE=$(df -h / | awk 'NR==2 {print $5}')
+BCACHE_USAGE=$(df -h /srv/userdata_wdblue_1tb 2>/dev/null | awk 'NR==2 {print $5}')
+
+TEMP=$(vcgencmd measure_temp 2>/dev/null | cut -d= -f2)
+
+RUNNING_CONTAINERS=0
+TOTAL_CONTAINERS=0
+
+if systemctl is-active --quiet docker; then
+    RUNNING_CONTAINERS=$(docker ps -q | wc -l)
+    TOTAL_CONTAINERS=$(docker ps -aq | wc -l)
+    DOCKER_STATE="RUNNING"
+    DOCKER_COLOR=$GREEN
+else
+    DOCKER_STATE="STOPPED"
+    DOCKER_COLOR=$RED
+fi
+
+echo
+echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║             Raspberry Pi Docker Dashboard                    ║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+echo
+
+echo -e "${GREEN}SYSTEM STATUS${NC}"
+echo "──────────────────────────────────────────────────────────────"
+
+printf "%-20s %s\n" "Hostname:" "$HOST"
+printf "%-20s %s\n" "Uptime:" "$UPTIME"
+printf "%-20s %s\n" "Kernel:" "$KERNEL"
+printf "%-20s %s MB / %s MB\n" "RAM:" "$MEM_USED" "$MEM_TOTAL"
+printf "%-20s %s\n" "CPU Temp:" "$TEMP"
+printf "%-20s %s\n" "Root FS:" "$ROOT_USAGE"
+printf "%-20s %s\n" "Bcache:" "$BCACHE_USAGE"
+
+echo
+echo -e "${DOCKER_COLOR}DOCKER STATUS${NC}"
+echo "──────────────────────────────────────────────────────────────"
+
+printf "%-20s %s\n" "Docker:" "$DOCKER_STATE"
+
+if [ "$DOCKER_STATE" = "RUNNING" ]; then
+    printf "%-20s %s / %s\n" "Container:" "$RUNNING_CONTAINERS" "$TOTAL_CONTAINERS"
+fi
+
+echo
+echo "Tippe 'help' für alle Admin-Befehle."
+echo

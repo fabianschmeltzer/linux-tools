@@ -1,0 +1,220 @@
+#!/bin/bash
+# docker-start
+
+echo "=== Docker & Portainer Start v12 ==="
+
+# ======================================================
+# Maintenance Mode erkennen
+# ======================================================
+
+MAINTENANCE_MODE=false
+
+if [ "$1" = "maintenance" ]; then
+    MAINTENANCE_MODE=true
+
+    echo
+    echo "======================================================"
+    echo " Maintenance Mode aktiv"
+    echo " Docker Images werden aktualisiert"
+    echo "======================================================"
+    echo
+fi
+
+# ======================================================
+# Docker starten
+# ======================================================
+
+if ! sudo systemctl is-active --quiet docker; then
+
+    echo "→ Docker-Dienst starten..."
+
+    sudo systemctl start docker
+
+    if ! sudo systemctl is-active --quiet docker; then
+        echo "❌ Docker-Dienst konnte nicht gestartet werden."
+        exit 1
+    fi
+fi
+
+echo "✔ Docker läuft."
+
+# ======================================================
+# Auf Docker warten
+# ======================================================
+
+echo "→ Warte auf Docker API..."
+
+timeout=30
+
+while ! docker info >/dev/null 2>&1 && [ $timeout -gt 0 ]; do
+    sleep 1
+    timeout=$((timeout - 1))
+done
+
+if ! docker info >/dev/null 2>&1; then
+    echo "❌ Docker reagiert nicht."
+    exit 1
+fi
+
+echo "✔ Docker API bereit."
+
+# ======================================================
+# Alle Container stoppen
+# ======================================================
+
+echo "→ Stoppe alle Container..."
+
+containers=$(docker ps -aq)
+
+if [ -n "$containers" ]; then
+    docker stop $containers >/dev/null 2>&1 || true
+fi
+
+sleep 5
+
+# ======================================================
+# Alle Container löschen
+# ======================================================
+
+echo "→ Lösche alle Container..."
+
+containers=$(docker ps -aq)
+
+if [ -n "$containers" ]; then
+    docker rm -f $containers >/dev/null 2>&1 || true
+fi
+
+sleep 2
+
+# ======================================================
+# Portainer starten
+# ======================================================
+
+docker-install-portainer
+
+# ======================================================
+# Portainer-Stacks starten
+# ======================================================
+
+echo
+echo "======================================================"
+echo " Starte aktive Portainer-Stacks"
+echo "======================================================"
+
+COMPOSE_DIR="/var/lib/docker/volumes/portainer_data/_data/compose"
+
+for dir in "$COMPOSE_DIR"/*; do
+
+    [ -d "$dir" ] || continue
+    [ -f "$dir/docker-compose.yml" ] || continue
+
+    cd "$dir" || continue
+
+    PROJECT=$(grep '^name:' docker-compose.yml | awk '{print $2}')
+
+    if [ -z "$PROJECT" ]; then
+        echo "→ Überspringe $(basename "$dir") (kein name: vorhanden)"
+        continue
+    fi
+
+    echo
+    echo "→ Starte Stack: $PROJECT"
+
+    if [ -f "stack.env" ]; then
+
+        if [ "$MAINTENANCE_MODE" = true ]; then
+
+            echo "→ Aktualisiere Images für $PROJECT"
+
+            docker compose \
+                --env-file stack.env \
+                pull
+
+        fi
+
+        docker compose \
+            --env-file stack.env \
+            up -d
+
+    else
+
+        if [ "$MAINTENANCE_MODE" = true ]; then
+
+            echo "→ Aktualisiere Images für $PROJECT"
+
+            docker compose pull
+
+        fi
+
+        docker compose up -d
+
+    fi
+
+    sleep 5
+
+done
+
+# ======================================================
+# Verbliebene Exited-Container starten
+# ======================================================
+
+echo
+echo "======================================================"
+echo " Starte verbliebene Exited-Container"
+echo "======================================================"
+
+exited_containers=$(docker ps -a -q --filter status=exited)
+
+if [ -n "$exited_containers" ]; then
+
+    if docker start $exited_containers >/dev/null 2>&1; then
+        echo "✔ Exited-Container gestartet."
+    else
+        echo "⚠️ Einige Exited-Container konnten nicht gestartet werden."
+        docker start $exited_containers
+    fi
+
+else
+    echo "✔ Keine Exited-Container gefunden."
+fi
+
+# ======================================================
+# Maintenance Cleanup
+# ======================================================
+
+if [ "$MAINTENANCE_MODE" = true ]; then
+
+    echo
+    echo "======================================================"
+    echo " Docker Cleanup"
+    echo "======================================================"
+
+    echo "→ Warte 10 Sekunden auf Stabilisierung..."
+    sleep 10
+
+    echo "→ Lösche ungenutzte Images..."
+    docker image prune -af
+
+    echo "→ Lösche ungenutzte Volumes..."
+    docker volume prune -f
+
+    echo "→ Lösche Build Cache..."
+    docker builder prune -af
+
+    echo "✔ Docker Cleanup abgeschlossen."
+
+fi
+
+# ======================================================
+# Status
+# ======================================================
+
+echo
+echo "======================================================"
+echo " Laufende Container"
+echo "======================================================"
+
+docker ps
+
+echo
+echo "✅ Vorgang abgeschlossen."

@@ -1,0 +1,19 @@
+#!/bin/bash
+# safe-reboot-v6.sh – Nur graceful, KEIN force-kill, KEIN rm -f
+# Für Raspberry Pi 4 + OMV + Docker + nginx
+
+echo "=== Safe Reboot v6 – graceful Stop ==="
+
+# 1. Alle laufenden Container graceful stoppen (Timeout 30 Sekunden wie gewünscht)
+docker-stop
+
+# 2. Services für nächsten Boot sicherstellen (harmlos, läuft immer)
+sudo systemctl enable docker nginx --quiet 2>/dev/null
+
+# 3. Bcache Flushen
+sudo sync
+sleep 15
+
+# 4. System herunterfahren
+echo "→ System wird jetzt neu gestartet..."
+sudo reboot

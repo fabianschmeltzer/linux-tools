@@ -1,0 +1,25 @@
+#!/bin/bash
+# safe-shutdown-v5.sh – Nur graceful, KEIN force-kill
+# Für Raspberry Pi 4 + OMV + Docker + nginx
+
+echo "=== Safe Shutdown v5 – Nur graceful Stop ==="
+
+# 1. Alle laufenden Container graceful stoppen (Timeout 30 Sekunden wie gewünscht)
+echo "→ Graceful Stop aller Container (Timeout 30 Sekunden)..."
+sudo docker stop --timeout=30 $(docker ps -q) 2>/dev/null || true
+
+# Kurze Wartezeit, damit die meisten Apps sauber abschließen können
+sleep 12
+
+# 2. Prüfen, ob noch Container laufen (hängende Zombies)
+still_running=$(docker ps -q)
+if [ -n "$still_running" ]; then
+  echo "→ Noch laufende/hängende Container nach 30s → Docker-Daemon wird gestoppt"
+  sudo systemctl stop docker
+  sleep 8
+else
+  echo "→ Alle Container erfolgreich gestoppt"
+fi
+
+# 3. Services für nächsten Boot sicherstellen (harmlos, läuft immer)
+sudo systemctl enable docker nginx --quiet 2>/dev/null

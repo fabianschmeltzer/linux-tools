@@ -1,0 +1,25 @@
+# 1. Eventuell vorhandenen alten Portainer-Container löschen
+echo "→ Lösche alten Portainer-Container (falls vorhanden)..."
+docker stop portainer 2>/dev/null || true
+docker rm portainer 2>/dev/null || true
+
+# 2. Portainer mit korrekten Ports und Restart-Policy neu starten
+echo "→ Portainer neu starten (https auf 9443)..."
+docker run -d \
+  -p 8000:8000 \
+  -p 9443:9443 \
+  --name portainer \
+  --restart=always \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v portainer_data:/data \
+  --network bridge \
+  portainer/portainer-ce:latest
+
+# Danach zusätzlich ins backup-net verbinden:
+docker network connect backup-net portainer
+
+if [ $? -ne 0 ]; then
+    echo "❌ Portainer konnte nicht gestartet werden."
+    exit 1
+fi
+echo "✔ Portainer läuft auf https://192.168.0.2:9443"
