@@ -6,6 +6,12 @@ ein frei wählbares Zielverzeichnis installiert werden können.
 
 ## Nutzung
 
+Direkt von GitHub installieren:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fabianschmeltzer/linux-tools/main/install.sh | bash
+```
+
 ```bash
 ./linux-toolbox.sh list
 ./linux-toolbox.sh install self
