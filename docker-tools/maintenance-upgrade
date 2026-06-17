@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+set -o noglob
+IFS=$'\n\t'
+
+readonly SAFE_PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+export PATH="$SAFE_PATH"
+
+eprint() {
+    printf '%s\n' "$*" >&2
+}
+
+cleanup() {
+    local exit_code=${1:-$?}
+    if [[ "$exit_code" -ne 0 ]]; then
+        eprint "Fehler: Skript wurde mit Status $exit_code beendet."
+    fi
+}
+
+trap 'cleanup $?; exit 1' ERR
+trap 'cleanup $?; exit 1' INT TERM
+trap 'cleanup $?' EXIT
+
+require_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        eprint "Fehler: '$1' wurde nicht gefunden."
+        exit 1
+    fi
+}
+
+optional_command() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+if [[ "${EUID:-0}" -ne 0 ]]; then
+    eprint "Fehler: Bitte als root ausführen."
+    exit 1
+fi
+
+require_command docker-stop
+require_command docker-start
+require_command apt-get
+
+echo "======================================="
+echo " Raspberry Pi Maintenance Upgrade"
+echo "======================================="
+echo
+
+echo "[1/10] Paketlisten aktualisieren..."
+DEBIAN_FRONTEND=noninteractive apt-get update
+
+echo
+echo "[2/10] Docker stoppen..."
+docker-stop
+
+echo
+echo "[3/10] Systemupgrade durchführen..."
+DEBIAN_FRONTEND=noninteractive apt-get -y full-upgrade
+
+echo
+echo "[4/10] Pi-hole aktualisieren..."
+
+if optional_command pihole; then
+    if ! pihole -up; then
+        eprint "Warnung: Pi-hole Update fehlgeschlagen."
+    fi
+else
+    echo "Pi-hole nicht installiert."
+fi
+
+echo
+echo "[5/10] Pi-hole Gravity aktualisieren..."
+
+if optional_command pihole; then
+    if ! pihole -g; then
+        eprint "Warnung: Pi-hole Gravity-Aktualisierung fehlgeschlagen."
+    fi
+else
+    echo "Pi-hole nicht installiert."
+fi
+
+echo
+echo "[6/10] Nicht mehr benötigte Pakete entfernen..."
+DEBIAN_FRONTEND=noninteractive apt-get -y autoremove
+
+echo
+echo "[7/10] Paketcache bereinigen..."
+apt-get autoclean
+apt-get clean
+
+echo
+echo "[8/10] Raspberry Pi Firmware / EEPROM Status..."
+
+if optional_command rpi-eeprom-update; then
+    rpi-eeprom-update || eprint "Warnung: rpi-eeprom-update konnte nicht erfolgreich ausgeführt werden."
+else
+    echo "rpi-eeprom-update nicht installiert."
+fi
+
+echo
+echo "[9/10] Needrestart Analyse..."
+
+if optional_command needrestart; then
+    needrestart || eprint "Warnung: needrestart konnte nicht erfolgreich ausgeführt werden."
+else
+    echo "needrestart nicht installiert."
+fi
+
+echo
+
+if optional_command checkrestart; then
+    checkrestart || eprint "Warnung: checkrestart konnte nicht erfolgreich ausgeführt werden."
+else
+    echo "checkrestart nicht installiert."
+fi
+
+echo
+echo "======================================="
+echo " Upgrade abgeschlossen"
+echo "======================================="
+echo
+
+if [[ ! -t 0 ]]; then
+    eprint "Keine interaktive Eingabe erkannt. Docker-Container werden gestartet."
+    docker-start maintenance
+    echo "Maintenance abgeschlossen."
+    exit 0
+fi
+
+while true; do
+    read -r -p "System jetzt neu starten? (j/n): " ANSWER
+    ANSWER="${ANSWER,,}"
+
+    case "$ANSWER" in
+        j|ja)
+            echo
+            echo "[10/10] Sync + Reboot..."
+            reboot-with-docker
+            exit 0
+            ;;
+        n|nein)
+            echo
+            echo "[10/10] Docker starten und Images aktualisieren..."
+            docker-start maintenance
+            echo
+            echo "Maintenance abgeschlossen."
+            exit 0
+            ;;
+        *)
+            echo "Bitte j oder n eingeben."
+            ;;
+    esac
+done
+
+            echo
+            echo "Maintenance abgeschlossen."
+            exit 0
+            ;;
+
+        *)
+
+            echo "Bitte j oder n eingeben."
+            ;;
+
+    esac
+
+done

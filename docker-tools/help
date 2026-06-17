@@ -1,0 +1,117 @@
+#!/bin/bash
+
+# Farben
+
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+CYAN='\033[1;36m'
+WHITE='\033[1;37m'
+NC='\033[0m'
+
+clear
+
+# Systemwerte
+
+HOST=$(hostname)
+UPTIME=$(uptime -p | sed 's/up //')
+KERNEL=$(uname -r)
+
+MEM_USED=$(free -m | awk '/Mem:/ {print $3}')
+MEM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
+
+ROOT_USAGE=$(df -h / | awk 'NR==2 {print $5}')
+BCACHE_USAGE=$(df -h /srv/userdata_wdblue_1tb 2>/dev/null | awk 'NR==2 {print $5}')
+
+TEMP=$(vcgencmd measure_temp 2>/dev/null | cut -d= -f2)
+
+DOCKER_STATUS=$(systemctl is-active docker 2>/dev/null)
+
+RUNNING_CONTAINERS=0
+TOTAL_CONTAINERS=0
+
+if command -v docker >/dev/null 2>&1 && systemctl is-active --quiet docker; then
+    RUNNING_CONTAINERS=$(docker ps -q | wc -l)
+    TOTAL_CONTAINERS=$(docker ps -aq | wc -l)
+fi
+
+echo -e "${CYAN}"
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║             Raspberry Pi Docker Dashboard                    ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
+
+echo -e "${GREEN}SYSTEM STATUS${NC}"
+echo "──────────────────────────────────────────────────────────────"
+
+printf "%-20s %s\n" "Hostname:" "$HOST"
+printf "%-20s %s\n" "Uptime:" "$UPTIME"
+printf "%-20s %s\n" "Kernel:" "$KERNEL"
+printf "%-20s %s MB / %s MB\n" "RAM:" "$MEM_USED" "$MEM_TOTAL"
+printf "%-20s %s\n" "CPU Temp:" "$TEMP"
+printf "%-20s %s\n" "Root FS:" "$ROOT_USAGE"
+printf "%-20s %s\n" "Bcache:" "$BCACHE_USAGE"
+
+echo
+
+if [ "$DOCKER_STATUS" = "active" ]; then
+    echo -e "${GREEN}DOCKER STATUS${NC}"
+    echo "──────────────────────────────────────────────────────────────"
+    printf "%-20s %s\n" "Docker:" "RUNNING"
+    printf "%-20s %s / %s\n" "Container:" "$RUNNING_CONTAINERS" "$TOTAL_CONTAINERS"
+else
+    echo -e "${RED}DOCKER STATUS${NC}"
+    echo "──────────────────────────────────────────────────────────────"
+    printf "%-20s %s\n" "Docker:" "STOPPED"
+fi
+
+echo
+echo -e "${BLUE}SYSTEM${NC}"
+echo "──────────────────────────────────────────────────────────────"
+printf "  %-28s %s\n" "maintenance-upgrade" "System Upgrade"
+printf "  %-28s %s\n" "reboot-with-docker" "Docker Stop + Reboot"
+printf "  %-28s %s\n" "shutdown-with-docker" "Docker Stop + Shutdown"
+
+echo
+echo -e "${CYAN}DOCKER${NC}"
+echo "──────────────────────────────────────────────────────────────"
+printf "  %-28s %s\n" "docker-start" "Docker + Stacks starten"
+printf "  %-28s %s\n" "docker-start maintenance" "Start + Image Updates"
+printf "  %-28s %s\n" "docker-stop" "Container stoppen"
+printf "  %-28s %s\n" "docker-install-portainer" "Portainer neu erstellen"
+printf "  %-28s %s\n" "docker ps" "Containerstatus"
+printf "  %-28s %s\n" "docker stats" "Ressourcen"
+
+echo
+echo -e "${YELLOW}WARTUNG${NC}"
+echo "──────────────────────────────────────────────────────────────"
+printf "  %-28s %s\n" "docker-start maintenance" "Images aktualisieren"
+printf "  %-28s %s\n" "maintenance-upgrade" "System Upgrade"
+
+echo
+echo -e "${YELLOW}BCACHE${NC}"
+echo "──────────────────────────────────────────────────────────────"
+printf "  %-28s %s\n" "bcache-monitor" "Monitoring"
+printf "  %-28s %s\n" "bcache-startup-tuning" "Optimierung"
+
+echo
+echo -e "${GREEN}BACKUP${NC}"
+echo "──────────────────────────────────────────────────────────────"
+printf "  %-28s %s\n" "rsync-srv-gui" "Backup GUI"
+
+echo
+echo -e "${BLUE}PI-HOLE${NC}"
+echo "──────────────────────────────────────────────────────────────"
+printf "  %-28s %s\n" "pihole" "Pi-hole Verwaltung"
+
+echo
+echo -e "${RED}SCHNELLE DIAGNOSE${NC}"
+echo "──────────────────────────────────────────────────────────────"
+printf "  %-28s %s\n" "free -h" "RAM Übersicht"
+printf "  %-28s %s\n" "df -h" "Speicher"
+printf "  %-28s %s\n" "docker ps" "Container"
+printf "  %-28s %s\n" "docker stats" "Live Ressourcen"
+
+echo
+echo -e "${WHITE}══════════════════════════════════════════════════════════════${NC}"
